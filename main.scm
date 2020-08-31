@@ -1,67 +1,98 @@
 (define tests #f)
 (define trace '())
 
-(define-macro (test result expected)
-  (if tests
-    `(let ((result ,result)
-           (expected ,expected))
-       (if (equal? ,result ,expected)
-         (begin
-           (display (string-append "Test Succeeded\n"))
-           (print (quote ,result)))
-         (begin
-           (display (string-append "Test Failed\n"))
-           (print (quote ,result))
-           (display "Expected:\n")
-           (print result)
-           (display "Got:\n")
-           (print expected))))
-    (begin)))
+;; For Biwa Scheme
+(begin
+  (define-macro (test result expected)
+                (if tests
+                    `(let ((result ,result)
+                           (expected ,expected))
+                       (if (equal? ,result ,expected)
+                           (begin
+                             (display (string-append "Test Succeeded\n"))
+                             (print (quote ,result)))
+                           (begin
+                             (display (string-append "Test Failed\n"))
+                             (print (quote ,result))
+                             (display "Expected:\n")
+                             (print result)
+                             (display "Got:\n")
+                             (print expected))))
+                    (begin)))
 
-(define-macro (dlet* bindings . body)
-  (cond
-    ((null? bindings)
-     `(let () ,@body))
-    ((pair? bindings)
-     (let* ((binding (car bindings))
-            (bindings (cdr bindings)))
-       (cond
-         ((symbol? (car binding))
-          `(let (,binding)
-             (dlet* ,bindings ,@body)))
-         ((pair? (car binding))
-          (let ((p (gensym 'p)))
-            `(let ((,p ,(cadr binding)))
-               (dlet* ((,(caar binding) (car ,p)))
-                 ,(if (null? (cdar binding))
-                   `(dlet* ,bindings ,@body)
-                   `(dlet* ((,(cdar binding) (cdr ,p))
-                            ,@bindings)
-                      ,@body))))
-                 )))))))
+  (define-macro (dlet* bindings . body)
+                (cond
+                  ((null? bindings)
+                   `(let () ,@body))
+                  ((pair? bindings)
+                   (let* ((binding (car bindings))
+                          (bindings (cdr bindings)))
+                     (cond
+                       ((symbol? (car binding))
+                        `(let (,binding)
+                          (dlet* ,bindings ,@body)))
+                       ((pair? (car binding))
+                        (let ((p (gensym 'p)))
+                         `(let ((,p ,(cadr binding)))
+                           (dlet* ((,(caar binding) (car ,p)))
+                                  ,(if (null? (cdar binding))
+                                       `(dlet* ,bindings ,@body)
+                                       `(dlet* ((,(cdar binding) (cdr ,p))
+                                                ,@bindings)
+                                               ,@body))))
+                         )))))))
+  (test (dlet* () 'foo) 'foo)
+  (test (dlet* ((a '(1 2 3))) a) '(1 2 3))
+  (test (dlet* (((a . b) '(1 2 3))) a) 1)
+  (test (dlet* (((a . b) '(1 2 3))) b) '(2 3))
+  (test (dlet* (((a b . c) '(1 2 3))) a) 1)
+  (test (dlet* (((a b . c) '(1 2 3))) b) 2)
+  (test (dlet* (((a b . c) '(1 2 3))) c) '(3))
+  (test (dlet* (((a b c) '(1 2 3))) a) 1)
+  (test (dlet* (((a b c) '(1 2 3))) b) 2)
+  (test (dlet* (((a b c) '(1 2 3))) c) 3)
 
-(test (dlet* () 'foo) 'foo)
-(test (dlet* ((a '(1 2 3))) a) '(1 2 3))
-(test (dlet* (((a . b) '(1 2 3))) a) 1)
-(test (dlet* (((a . b) '(1 2 3))) b) '(2 3))
-(test (dlet* (((a b . c) '(1 2 3))) a) 1)
-(test (dlet* (((a b . c) '(1 2 3))) b) 2)
-(test (dlet* (((a b . c) '(1 2 3))) c) '(3))
-(test (dlet* (((a b c) '(1 2 3))) a) 1)
-(test (dlet* (((a b c) '(1 2 3))) b) 2)
-(test (dlet* (((a b c) '(1 2 3))) c) 3)
+  ;; Core polyfill
+  (define modulo mod)
 
-;; Core polyfill
-(define modulo mod)
+  ;; srfi-1
+  (define (car+cdr pair)
+    (values (car pair) (cdr pair)))
 
-;; srfi-1
-(define (car+cdr pair)
-  (values (car pair) (cdr pair)))
+  (define first car)
+  (define second cadr)
+  (define third caddr)
+  (define fourth cadddr)
+  )
 
-(define first car)
-(define second cadr)
-(define third caddr)
-(define fourth cadddr)
+;; For other schemes
+;; (begin
+;;   (define-syntax dlet
+;;     (syntax-rules ()
+;;       ((dlet () body ...)
+;;        (let () body ...))
+;;       ((dlet ((() x)) body ...)
+;;        (let () body ...))
+;;       ((dlet (((a . d) x)) body ...)
+;;        (let ((b x))
+;;         (dlet ((a (car b)))
+;;               (dlet ((d (cdr b)))
+;;                     body ...))))
+;;       ((dlet (((a . ()) x)) body ...)
+;;        (dlet ((a (car x)))
+;;              body ...))
+;; 
+;;       ((dlet ((b x)) body ...)
+;;        (let ((b x)) body ...))))
+;; 
+;;   (define-syntax dlet*
+;;     (syntax-rules ()
+;;       ((dlet* () body ...)
+;;        (let () body ...))
+;;       ((dlet* (x rest ...) body ...)
+;;        (dlet (x)
+;;              (dlet* (rest ...) body ...))))))
+
 
 (define *error* #f)
 
@@ -162,8 +193,16 @@
 (define (make-procedure parameters body environment)
   (list 'compound-procedure parameters body environment))
 
+(define (bound-parameters-list formal-parameters)
+  (cond
+    ((symbol? formal-parameters) (list formal-parameters))
+    ((pair? formal-parameters) (cons (car formal-parameters)
+                                     (bound-parameters-list (cdr formal-parameters))))
+    (else (error "Invalid formal parameters list: " formal-parameters))))
+
 (define (feval-lambda parameters body environment)
-  (let*-values (((procedure-environment _ environment) (free-variables body parameters environment)))
+  (let*-values (((procedure-environment _ environment)
+                 (free-variables body (bound-parameters-list parameters) environment)))
     (values (make-procedure parameters body procedure-environment) environment)))
 
 (define (procedure-parameters procedure)
@@ -256,6 +295,7 @@
      (extend-environment (acons (car bindings) #f environment)
                          (cdr bindings)
                          values))
+    ((symbol? bindings) (acons bindings values environment))
     (else
       (extend-environment (acons (car bindings) (car values) environment)
                           (cdr bindings)
@@ -436,4 +476,4 @@
          (fizzbuzz (+ x 1) y)
          (begin x y fizzbuzz))))
 
-(repl)
+;; (repl)
