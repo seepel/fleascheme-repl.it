@@ -68,7 +68,9 @@
 (define (error message . args)
   (let ((output (open-output-string)))
     (display message output)
-    (for-each (lambda (x) (write x output))
+    (for-each (lambda (x) 
+                (write x output)
+                (display " " output))
 	            args)
     (if *error*
         (*error* (get-output-string output))
@@ -176,12 +178,73 @@
 (define (acons key value alist)
   (cons (cons key value) alist))
 
+(define (verify-numeric-arguments proc min-arg-count max-arg-count)
+  (lambda arguments
+    (let ((arg-count 0))
+      (for-each (lambda (n)
+                  (set! arg-count (+ arg-count 1))
+                  (unless (number? n)
+                    (error "Incorrect type, expected number when applying: " 
+                           proc
+                           arguments)))
+                arguments)
+      (when (or (< arg-count min-arg-count)
+                (> arg-count max-arg-count))
+        (error "Incorrect number of arguments to procedure: "
+               proc
+               arg-count
+               min-arg-count
+               max-arg-count)))
+    (apply proc arguments)))
+
+(define (verify-argument-count proc min-arg-count max-arg-count)
+  (lambda arguments
+    (let ((arg-count (length arguments)))
+      (when (or (< arg-count min-arg-count)
+                (> arg-count max-arg-count))
+        (error "Incorrect number of arguments to procedure: "
+               proc
+               arg-count
+               min-arg-count
+               max-arg-count)))
+    (apply proc arguments)))
+
+(define (verify-pair-argument proc)
+  (lambda arguments
+    (unless (= (length arguments) 1)
+      (error "Incorrect number of arguments to procedure: "
+               proc
+               arg-count
+               min-arg-count
+               max-arg-count))
+    (unless (pair? (car arguments))
+      (error "Incorrect type, expected number when applying: " 
+             proc
+             arguments))
+    (apply proc arguments)))
+
 (define empty-environment 
-  `((+ . ,+) (- . ,-) (* . ,*) (/ . ,/) (modulo . ,modulo)
-    (cons . ,cons) (car . ,car) (cdr . ,cdr) (car+cdr . ,car+cdr)
-    (> . ,>) (< . ,<) (>= . ,>=) (<= . ,<=) (= . ,=)
-    (eq? . ,eq?) (eqv? . ,eqv?) (equal? . ,equal?)
-    (display . ,display) (write . ,write) (newline . ,newline)
+  `((+ . ,(verify-numeric-arguments + 0 1000))
+    (- . ,(verify-numeric-arguments - 0 1000))
+    (* . ,(verify-numeric-arguments * 0 1000))
+    (/ . ,(verify-numeric-arguments / 1 1000))
+    (modulo . ,(verify-numeric-arguments modulo 2 2))
+    (cons . ,(verify-argument-count cons 2 2))
+    (car . ,(verify-pair-argument car))
+    (cdr . ,(verify-pair-argument cdr))
+    (car+cdr . ,(verify-pair-argument car+cdr))
+    (> . ,(verify-numeric-arguments > 2 1000))
+    (< . ,(verify-numeric-arguments < 2 1000))
+    (>= . ,(verify-numeric-arguments >= 2 1000))
+    (<= . ,(verify-numeric-arguments <= 2 1000))
+    (= . ,(verify-numeric-arguments = 2 1000))
+    (eq? . ,(verify-argument-count eq? 2 2))
+    (eqv? . ,(verify-argument-count eqv? 2 2))
+    (equal? . ,(verify-argument-count equal? 2 2))
+    ;; Do not support ports, so only check for a single argument
+    (display . ,(verify-argument-count display 1 1))
+    (write . ,(verify-argument-count write 1 1))
+    (newline . ,(verify-argument-count newline 0 0))
     (values . ,values)
     ))
 
@@ -338,7 +401,9 @@
   (%repl empty-environment))    
 
 (define (%repl environment)
-  (display "* ")
+  (display "Welcome to Flea Scheme! To exit the repl back to the host Scheme environment evaluate (exit)")
+  (newline)
+  (display " *")
   (call-with-current-continuation
    (lambda (cont)
      (set! *error* 
@@ -370,3 +435,5 @@
      (if (< (dup x) (dup y))
          (fizzbuzz (+ x 1) y)
          (begin x y fizzbuzz))))
+
+(repl)
