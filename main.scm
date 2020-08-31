@@ -51,14 +51,28 @@
 (test (dlet* (((a b c) '(1 2 3))) b) 2)
 (test (dlet* (((a b c) '(1 2 3))) c) 3)
 
+;; Core polyfill
 (define modulo mod)
+
+;; srfi-1
+(define (car+cdr pair)
+  (values (car pair) (cdr pair)))
+
+(define first car)
+(define second cadr)
+(define third caddr)
+(define fourth cadddr)
+
+(define *error* #f)
 
 (define (error message . args)
   (let ((output (open-output-string)))
-   (display message output)
-   (for-each (lambda (x) (write x output))
-	     args))
-   (raise (get-output-string output)))
+    (display message output)
+    (for-each (lambda (x) (write x output))
+	            args)
+    (if *error*
+        (*error* (get-output-string output))
+        (raise (get-output-string output)))))
 
 (define lambda-parameters cadr)
 (define lambda-body cddr)
@@ -75,6 +89,7 @@
        (values true?
                (cons (car bound-identifiers)
                      remaining-bound-identifiers))))))
+                     
 (define (free-variables expression bound-identifiers environment)
   (cond
     ((self-quoting? expression)
@@ -87,12 +102,7 @@
            (let-values (((binding environment) (environment-ref environment expression)))
              (if binding
                  (values (list binding) bound-identifiers environment)
-                 (begin
-                   (display "Error: Unbound identifier: ")
-                   (display expression)
-                   (newline)
-                   ;; error though
-                   (values '() bound-identifiers environment)))))))   
+                 (error "[free-variables identifier?] Unbound identifier: " expression))))))
     ((null? expression)
      (values '() bound-identifiers environment))
     ((pair? expression)
@@ -103,18 +113,35 @@
         (free-variables (lambda-body expression) 
                         (append (lambda-parameters expression) bound-identifiers)
                         environment))
-       ((begin)
-        (free-variables (cdr expression) bound-identifiers environment))
+       ((begin if)
+        (let*-values (((test-free-variables test-bound-identifiers test-environment)
+                       (free-variables (second expression) 
+                                       bound-identifiers 
+                                       environment))
+                      ((true-free-variables true-bound-identifiers true-environment)
+                       (free-variables (third expression) 
+                                       test-bound-identifiers 
+                                       test-environment))
+                      ((false-free-variables false-bound-identifiers false-environment)
+                       (free-variables (third expression) 
+                                       test-bound-identifiers 
+                                       test-environment)))
+          (if (and (equal? true-free-variables false-free-variables)
+                   (equal? true-bound-identifiers false-bound-identifiers)
+                   (equal? true-environment false-environment))
+              (values (append test-free-variables true-free-variables)
+                      true-bound-identifiers
+                      true-environment)
+              (error "[free-variables if] References must match between conditional branches"))))
        ((dup)
-        (let ((binding (assv (second expression) environment)))
-          (if binding
-              (values (list binding) bound-identifiers environment)
-              (begin
-                (display "Error: Unbound identifier: ")
-                (display expression)
-                (newline)
-                ;; error though
-                (values '() bound-identifiers environment)))))
+        (let ((free-variable? (assv (second expression) environment))
+              (bound-variable? (find (lambda (x) 
+                                       (eqv? (second expression) x))
+                                     bound-identifiers)))
+          (cond
+            (free-variable? (values (list (second binding)) bound-identifiers environment))
+            (bound-variable? (values '() bound-identifiers environment))
+            (error "[free-variables dup] Unbound identifier: " (second expression)))))
        (else 
         (let*-values (((a d)
                             (car+cdr expression))
@@ -125,10 +152,10 @@
           (values (append a-free-variables d-free-variables) bound-identifiers environment)))))))
 
 (define (primitive-procedure? x)
-  (values (procedure? x) x))
+  (procedure? x))
 
 (define (compound-procedure? x)
-  (values (eqv? (car x) 'compound-procedure) x))
+  (eqv? (car x) 'compound-procedure))
 
 (define (make-procedure parameters body environment)
   (list 'compound-procedure parameters body environment))
@@ -184,22 +211,19 @@
               (values found-binding (cons binding environment)))))))
 
 (define (self-quoting? x)
-  (values (or (number? x)
-              (boolean? x)
-              (string? x)) 
-          x))
+  (or (number? x)
+      (boolean? x)
+      (string? x))) 
 
-(define (identifier? x)
-  (values (symbol? x) x))
+(define identifier? symbol?)
 
 (define (feval-identifier identifier environment)
   (let-values (((binding environment) (environment-ref environment identifier)))
     (if binding
         (values (cdr binding) environment)
-        (error "Unbound identifier: " identifier))))
+        (error "[feval-identifier] Unbound identifier: " identifier))))
 
-(define (application? x)
-  (values (pair? x) x))
+(define application? pair?)
 
 (define (feval-operands operands environment)
   (if (null? operands)
@@ -238,9 +262,6 @@
                          (cons self-binding environment)
                          environment))
                     ((value environment) (feval (caddr expression) environment)))
-
-            (display environment)
-            (newline)
         (when (and (pair? environment)
                    (eqv? self-binding (car environment)))
           (set! environment (cdr environment)))
@@ -258,7 +279,7 @@
   (cond
     ((self-quoting? expression)
      (values expression environment))
-    ((identifier? expression) 
+    ((identifier? expression)
      (feval-identifier expression environment))
     ((application? expression)
      (case (car expression)
@@ -277,7 +298,10 @@
           (if true?
               (feval (third expression) environment)
               (feval (fourth expression) environment))))
-       (else (feval-application expression environment) )))))
+       ((exit)
+        (values expression environment))
+       (else (feval-application expression environment))))
+    (else (error "Cannot evaluate: " expression))))
 
 (define (apply-primitive-procedure procedure arguments)
   (apply procedure arguments))
@@ -306,18 +330,31 @@
                    ((value environment) (feval-sequence (procedure-body operator) environment))
                    ((unused-bindings) (unused-bindings environment)))
        (if (null? unused-bindings) 
-           (values value environment)
+           value
            (error "Unused bindings:" unused-bindings))))
     (else (error "Wrong type to apply: ~a" operator))))
 
-(define (repl environment)
+(define (repl)
+  (%repl empty-environment))    
+
+(define (%repl environment)
   (display "* ")
-  (let*-values ((input (read))
-                ((output environment) (feval input environment)))
-    (display "=> ")
-    (display output)
-    (newline)
-    (repl environment)))
+  (call-with-current-continuation
+   (lambda (cont)
+     (set! *error* 
+       (lambda (error)
+         (display error)
+         (newline)
+         (cont (%repl environment))))
+     (let*-values (((input) (read))
+                   ((output environment)  (feval input environment)))
+       (display "=> ")
+       (write output)
+       (newline)
+       (if (and (pair? input)
+                    (eqv? (car input) 'exit))
+           (set! *error* #f)
+           (%repl environment))))))
 
 (define fizzbuzz
   '(define (fizzbuzz x y)
