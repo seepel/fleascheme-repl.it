@@ -398,11 +398,11 @@
     (else (error "Wrong type to apply: ~a" operator))))
 
 (define (repl)
+  (display "Welcome to Flea Scheme! To exit the repl back to the host Scheme environment evaluate (exit)")
+  (newline)
   (%repl empty-environment))    
 
 (define (%repl environment)
-  (display "Welcome to Flea Scheme! To exit the repl back to the host Scheme environment evaluate (exit)")
-  (newline)
   (display " *")
   (call-with-current-continuation
    (lambda (cont)
