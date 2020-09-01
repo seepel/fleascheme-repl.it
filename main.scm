@@ -195,6 +195,7 @@
 
 (define (bound-parameters-list formal-parameters)
   (cond
+    ((null? formal-parameters) formal-parameters)
     ((symbol? formal-parameters) (list formal-parameters))
     ((pair? formal-parameters) (cons (car formal-parameters)
                                      (bound-parameters-list (cdr formal-parameters))))
@@ -359,7 +360,6 @@
                   ,@(cddr expression)))
              environment)
       (let*-values (((identifier) (cadr expression))
-                    ((_ environment) (environment-ref environment identifier))
                     ((self-binding) (cons identifier '*self*))
                     ((environment) (if (and (pair? (caddr expression))
                                             (eqv? (caaddr expression) 'lambda))
@@ -376,7 +376,7 @@
       (let ((binding (assv identifier environment)))
         (if binding
             (values (cdr binding) environment)
-            (error "Error: dup: Unobound identifier: " identifier)))
+            (error "Error: dup: Unbound identifier: " identifier)))
       (error "Error: dup: Expected an identifier but got: " identifier)))
 
 (define (feval expression environment)
