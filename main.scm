@@ -102,7 +102,7 @@
     (for-each (lambda (x) 
                 (write x output)
                 (display " " output))
-	            args)
+                args)
     (if *error*
         (*error* (get-output-string output))
         (raise (get-output-string output)))))
@@ -359,6 +359,7 @@
                   ,@(cddr expression)))
              environment)
       (let*-values (((identifier) (cadr expression))
+                    ((_ environment) (environment-ref environment identifier))
                     ((self-binding) (cons identifier '*self*))
                     ((environment) (if (and (pair? (caddr expression))
                                             (eqv? (caaddr expression) 'lambda))
@@ -476,4 +477,4 @@
          (fizzbuzz (+ x 1) y)
          (begin x y fizzbuzz))))
 
-;; (repl)
+(repl)
