@@ -360,6 +360,7 @@
                   ,@(cddr expression)))
              environment)
       (let*-values (((identifier) (cadr expression))
+                    ((_ environment) (environment-ref environment identifier))
                     ((self-binding) (cons identifier '*self*))
                     ((environment) (if (and (pair? (caddr expression))
                                             (eqv? (caaddr expression) 'lambda))
