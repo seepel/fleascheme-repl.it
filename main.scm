@@ -495,3 +495,17 @@
          (begin x y fizzbuzz))))
 
 (repl)
+
+(define (fizzbuzz x y)
+     (display
+       (if (= (modulo (dup x) 15) 0)
+           "FizzBuzz"
+           (if (= (modulo (dup x) 3) 0)
+               "Fizz"
+               (if (= (modulo (dup x) 5) 0)
+                   "Buzz"
+                   (dup x)))))
+     (newline)
+     (if (< (dup x) (dup y))
+         (fizzbuzz (+ x 1) y)
+         (begin x y fizzbuzz)))
