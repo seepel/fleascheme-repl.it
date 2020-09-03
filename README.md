@@ -138,7 +138,7 @@ While without the newline, everything is fine:
 
 # Motivation
 Rather than coming up with some fresh new ideas for the Programming Language Jam
-Flea Scheme revives some rather stale ideas from 1991 that perhaps sholud have
+Flea Scheme revives some rather stale ideas from 1991 that perhaps should have
 seen some more love.
 
 The main inspiration for Flea Scheme is Henry Baker's paper titled
